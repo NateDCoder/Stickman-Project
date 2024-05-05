@@ -1,75 +1,37 @@
 import pygame
-import pymunk
-import random
+import math
 
-class BallSimulation:
-    def __init__(self, x, y, width=800, height=600, ball_radius=10, start_height=400):
-        self.width = width
-        self.height = height
-        self.ball_radius = ball_radius
-        self.start_height = start_height
-        self.x = x
-        self.y = y
-        self.balls = []
-        self.space = None
-        self.screen = None
+# Pygame setup
+pygame.init()
+screen = pygame.display.set_mode((250, 250))
+running = True
 
-    def add_ball(self, x, y):
-        mass = 1
-        moment = pymunk.moment_for_circle(mass, 0, self.ball_radius)
-        body = pymunk.Body(mass, moment)
-        body.position = x, y
-        shape = pymunk.Circle(body, self.ball_radius)
-        shape.elasticity = 0.95
-        self.space.add(body, shape)
-        self.balls.append(shape)
+angle = 0
+speed = 0.05
+num_arms = 5
+radius = 100
 
-    def add_walls(self):
-        static_lines = [
-            pymunk.Segment(self.space.static_body, (self.x, self.y), (self.x, self.height), 1),
-            pymunk.Segment(self.space.static_body, (self.x, self.height), (self.width, self.height), 1),
-            pymunk.Segment(self.space.static_body, (self.width, self.height), (self.width, 0), 1),
-            pymunk.Segment(self.space.static_body, (self.width, self.y), (self.x, self.y), 1)
-        ]
-        for line in static_lines:
-            line.elasticity = 1.0
-            self.space.add(line)
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    pygame.draw.circle(screen, (255, 0, 255), (125, 125), 105)
+    # Draw the spiral
+    for i in range(num_arms):
+        angle_offset = 2 * math.pi / num_arms * i + angle
+        for j in range(200):
+            r = j / 200 * radius
+            theta = j / 200 * 2 * math.pi + angle_offset
+            x = int(r * math.cos(theta)) + 125
+            y = int(r * math.sin(theta)) + 125
+            pygame.draw.circle(screen, (128, 0, 128), (x, y), 5)
+    pygame.draw.circle(screen, (0, 0, 0), (125, 125), 105, width=10)
+    # Update the display
+    pygame.display.flip()
 
-    def draw_ball(self, ball):
-        pos_x, pos_y = int(ball.body.position.x), int(ball.body.position.y)
-        pygame.draw.circle(self.screen, (255, 255, 255), (pos_x, pos_y), self.ball_radius)
+    # Increase the angle
+    angle += speed
+    pygame.time.delay(16)
 
-    def run(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        clock = pygame.time.Clock()
-
-        self.space = pymunk.Space()
-        self.space.gravity = (0, 100)
-
-        self.add_walls()
-        for x in range(self.ball_radius, self.width, self.ball_radius * 2):
-            for y in range(self.start_height, self.height, self.ball_radius * 2):
-                self.add_ball(x, y)
-
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
-            self.screen.fill((0, 0, 0))
-
-            for ball in self.balls:
-                self.draw_ball(ball)
-
-            self.space.step(1/60.0)
-
-            pygame.display.flip()
-            clock.tick(60)
-
-        pygame.quit()
-
-if __name__ == "__main__":
-    sim = BallSimulation(0, 0)
-    sim.run()
+# Quit Pygame
+pygame.quit()

@@ -182,16 +182,31 @@ class Platform(pygame.sprite.Sprite):
         global world_offset
         self.rect.topleft = (self.position[0] - world_offset[0], self.position[1] - world_offset[1])
 class LevelData:
-    def __init__(self, level, platforms = [], player_start = []):
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
         self.level = level
         self.platforms = pygame.sprite.Group()
         self.player_start = player_start
+        self.end_point = end_point
         for platform in platforms:
             self.platforms.add(Platform(*platform))
+        self.portal_angle = 0
+        self.portal_speed = 0.05
     def update(self):
         for platform in self.platforms:
             platform.update()
             screen.blit(platform.image, platform.rect)
+        pygame.draw.circle(screen, (255, 0, 255), (self.end_point[0] - world_offset[0], self.end_point[1] - world_offset[1]), 52)
+        # Draw the spiral
+        for i in range(5):
+            angle_offset = 2 * math.pi / 5 * i + self.portal_angle
+            for j in range(200):
+                r = j / 200 * 50
+                theta = j / 200 * 2 * math.pi + angle_offset
+                x = int(r * math.cos(theta)) + 125
+                y = int(r * math.sin(theta)) + 125
+                pygame.draw.circle(screen, (128, 0, 128), ((self.end_point[0] - world_offset[0]) + x - 125, (self.end_point[1] - world_offset[1]) + y - 125), 3)
+        pygame.draw.circle(screen, (0, 0, 0), (self.end_point[0] - world_offset[0], self.end_point[1] - world_offset[1]), 52, width=5)
+        self.portal_angle += self.portal_speed
     def draw(self):
         for platform in self.platforms:
             screen.blit(platform.image, platform.rect)
@@ -199,8 +214,8 @@ class LevelData:
         for platform in self.platforms:
             platform.collide(player)
 class Level1(LevelData):
-    def __init__(self, level, platforms = [], player_start = []):
-        super().__init__(level, platforms, player_start)
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
+        super().__init__(level, platforms, player_start, end_point)
     
 levels = [
     Level1(
@@ -217,7 +232,8 @@ levels = [
                 (2000, 250, 100, 30, (255, 255, 255)),
                 (2380, 220, 30, 240, (255, 255, 255)),
               ],
-              [100, 745]
+              [100, 745],
+              [3000, 400]
             )
 ]
 player = Player()
@@ -278,8 +294,9 @@ def draw_text(screen, text, x, y, size=50, color=(255, 255, 255)):
     font = pygame.font.Font(None, size)  # Use the default font
     text_surface = font.render(text, True, color)  # Create a surface with the text
     screen.blit(text_surface, (x, y))  # Draw the text surface on the screen
-
+    
 def main():
+    global angle, speed
     play_start_screen()
     ball_pit.initialize()
     ball_pit_2.initialize()
@@ -316,7 +333,7 @@ def main():
         elif 1950 < player.position[0] < 2380:
             draw_text(screen, "Jump in the air to travel further", 100, 100)
         elif player.position[0] > 2800:
-            draw_text(screen, "Congrats!! you finished the tutorial", 150, 100)
+            draw_text(screen, "Congrats!! You finished the tutorial", 150, 100)
         pygame.display.flip()
 
         pygame.time.Clock().tick(60)
