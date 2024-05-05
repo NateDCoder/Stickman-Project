@@ -60,7 +60,7 @@ class BallSimulation:
 
     def update_player_ball(self, x, y, vel_x, vel_y):
         self.balls[-1].body.position = x, y
-        self.balls[-1].body.velocity = 0, 100
+        self.balls[-1].body.velocity = vel_x*10, 100
     def run(self, world_offset):
         for i in range(len(self.balls)-1):
             self.draw_ball(self.balls[i], self.colors[i], world_offset)

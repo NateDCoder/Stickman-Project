@@ -62,6 +62,11 @@ class Player(pygame.sprite.Sprite):
         self.friction = 0.85
         self.moving = False
 
+        self.angle = 180
+        self.scale = 1
+        self.shrink_speed = 0.01
+        self.rotation_speed = 6
+        self.radius = 50
     def jump(self):
         if not self.jumping:
             self.jumping = True
@@ -88,11 +93,22 @@ class Player(pygame.sprite.Sprite):
         now = time.time()
         if now - self.last_time > 0.05:
             self.last_time = now
-            self.current_frame = (self.current_frame + 1) % 4
-        if self.velocity[0] < 0:
+            self.current_frame = (self.current_frame + int(self.velocity[0]/2)) % 4
+        if self.jumping:
+            if self.image in self.frames_l:
+                self.image = self.frames_l[2]
+            else:
+                self.image = self.frames_r[2]
+        elif self.velocity[0] < -0.5:
             self.image = self.frames_l[self.current_frame]
-        if self.velocity[0] > 0:
+        elif self.velocity[0] > 0.5:
             self.image = self.frames_r[self.current_frame]
+        else:
+            self.current_frame = 1
+            if self.image in self.frames_l:
+                self.image = self.frames_l[1]
+            else:
+                self.image = self.frames_r[1]
 
     def update(self):
         if self.respawn:
@@ -130,15 +146,41 @@ class Player(pygame.sprite.Sprite):
         else:
             self.rect.centery = self.position[1]
     def doRespawn(self):
-        new_point = interpolate(self.death_time, self.death_location, [100, 445])
+        new_point = interpolate(self.death_time, self.death_location, levels[current_level].player_start.copy())
         world_offset[0] = new_point[0] - WIDTH/2
         self.death_time += 0.01
         particles.append(Particle(new_point, random.randint(1, 5)))
         if self.death_time >= 1:
             world_offset[0] = 0
             self.respawn = False
-            self.position = [100, 445]
-
+            self.position = levels[current_level].player_start.copy()
+    def portal_animation(self):
+        global start_portal_animation
+        if self.scale > 0:
+            self.scale -= self.shrink_speed
+            self.angle += self.rotation_speed
+            self.radius -= self.rotation_speed/5
+            if self.radius < 0:
+                self.radius = 0
+            self.position[0] = levels[current_level].end_point[0] + self.radius * math.cos(math.radians(self.angle))
+            self.position[1] = levels[current_level].end_point[1] + self.radius * math.sin(math.radians(self.angle))
+            self.rect.center = self.position[0] - world_offset[0], self.position[1] - world_offset[1]
+            self.image = pygame.transform.rotozoom(self.frames_l[self.current_frame], self.angle, self.scale)
+            self.rect = self.image.get_rect(center=self.rect.center)
+            self.rect = self.image.get_rect(center=self.rect.center)
+        else:
+            self.position = levels[current_level].player_start.copy()
+            self.scale = 1
+            self.angle = 180
+            self.radius = 50
+            self.respawn = False
+            self.jumping = False
+            self.velocity = [0, 0]
+            self.image = self.frames_l[0]
+            self.rect = self.image.get_rect(center=(WIDTH / 2, HEIGHT-100))
+            self.size = self.image.get_size()
+            self.world_offset = [0, 0]
+            start_portal_animation = False
 
         
 
@@ -191,12 +233,13 @@ class LevelData:
             self.platforms.add(Platform(*platform))
         self.portal_angle = 0
         self.portal_speed = 0.05
+        self.background_color = (173, 216, 230)
     def update(self):
         for platform in self.platforms:
             platform.update()
             screen.blit(platform.image, platform.rect)
         pygame.draw.circle(screen, (255, 0, 255), (self.end_point[0] - world_offset[0], self.end_point[1] - world_offset[1]), 52)
-        # Draw the spiral
+        # Draw the portal
         for i in range(5):
             angle_offset = 2 * math.pi / 5 * i + self.portal_angle
             for j in range(200):
@@ -213,9 +256,24 @@ class LevelData:
     def collide(self, player):
         for platform in self.platforms:
             platform.collide(player)
+    def reach_end(self, player):
+        if player.rect.colliderect(pygame.Rect(self.end_point[0] - world_offset[0] - 50, self.end_point[1] - world_offset[1] - 50, 100, 100)):
+            return True
+        return False
 class Level1(LevelData):
     def __init__(self, level, platforms = [], player_start = [], end_point = []):
         super().__init__(level, platforms, player_start, end_point)
+        self.background_color = (173, 216, 230)
+        self.ball_pit = BallSimulation(770, 0, width=280, start_height=420, height=HEIGHT-40, screen=screen)
+        self.ball_pit_2 = BallSimulation(1090, 0, width=1290, start_height=420, height=HEIGHT-40, screen=screen)
+        self.ball_pit.initialize()
+        self.ball_pit_2.initialize()
+    def update(self):
+        super().update()
+        self.ball_pit.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
+        self.ball_pit.run(world_offset)
+        self.ball_pit_2.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
+        self.ball_pit_2.run(world_offset)
     
 levels = [
     Level1(
@@ -232,10 +290,11 @@ levels = [
                 (2000, 250, 100, 30, (255, 255, 255)),
                 (2380, 220, 30, 240, (255, 255, 255)),
               ],
-              [100, 745],
+              [100, 445],
               [3000, 400]
             )
 ]
+current_level = 0
 player = Player()
 particles = []
 jumpDebounce = True
@@ -268,6 +327,7 @@ def update_world_offset(old_x_position):
 
     if world_offset[1] > world_size[1] - HEIGHT or player.position[1] > world_size[1] - HEIGHT/2:
         world_offset[1] = world_size[1] - HEIGHT
+       
 start_screen = VideoFileClip('./stickman/Start Screen.mp4')
 def play_start_screen():
     while True:
@@ -287,53 +347,64 @@ def play_start_screen():
                     if event.key == pygame.K_SPACE:
                         return
             time.sleep(1/30)
-ball_pit = BallSimulation(770, 0, width=280, start_height=420, height=HEIGHT-40, screen=screen)
-ball_pit_2 = BallSimulation(1090, 0, width=1290, start_height=420, height=HEIGHT-40, screen=screen)
 
 def draw_text(screen, text, x, y, size=50, color=(255, 255, 255)):
     font = pygame.font.Font(None, size)  # Use the default font
     text_surface = font.render(text, True, color)  # Create a surface with the text
     screen.blit(text_surface, (x, y))  # Draw the text surface on the screen
-    
+
+def tutorial_text():
+    if player.position[0] < 300:
+        draw_text(screen, "Arrow Keys to move", 50, 300)
+    elif player.position[0] < 500:
+        draw_text(screen, "Press UP arrow to jump", 300, 250)
+    elif 1090 < player.position[0] < 1350:
+        draw_text(screen, "Hold LEFT to maintain momentum", 100, 200) 
+    elif 1950 < player.position[0] < 2380:
+        draw_text(screen, "Jump in the air to travel further", 100, 100)
+    elif player.position[0] > 2800:
+        draw_text(screen, "Congrats!! You finished the tutorial", 150, 100)
+
+def draw_death_particles():
+    for particle in particles[:]:
+        particle.move()
+        particle.display(screen)
+        if not particle.alive():
+            particles.remove(particle)
+start_portal_animation = False
 def main():
-    global angle, speed
+    global angle, speed, start_portal_animation
     play_start_screen()
-    ball_pit.initialize()
-    ball_pit_2.initialize()
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
         handle_input()
-        old_x_position = player.position[0]
-        player.update()
-        levels[0].collide(player)
 
-        update_world_offset(old_x_position)
+        # Update the player
+        if not start_portal_animation:
+            old_x_position = player.position[0]
+            player.update()
+            levels[current_level].collide(player)
+            update_world_offset(old_x_position)
 
-        screen.fill((173, 216, 230))
+        screen.fill(levels[0].background_color)
         screen.blit(player.image, player.rect)
-        levels[0].update()
-        for particle in particles[:]:
-            particle.move()
-            particle.display(screen)
-            if not particle.alive():
-                particles.remove(particle)
-        ball_pit.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
-        ball_pit.run(world_offset)
-        ball_pit_2.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
-        ball_pit_2.run(world_offset)
-        if player.position[0] < 300:
-            draw_text(screen, "Arrow Keys to move", 50, 300)
-        elif player.position[0] < 500:
-            draw_text(screen, "Press UP arrow to jump", 300, 250)
-        elif 1090 < player.position[0] < 1350:
-            draw_text(screen, "Hold LEFT to maintain momentum", 100, 200) 
-        elif 1950 < player.position[0] < 2380:
-            draw_text(screen, "Jump in the air to travel further", 100, 100)
-        elif player.position[0] > 2800:
-            draw_text(screen, "Congrats!! You finished the tutorial", 150, 100)
+        levels[current_level].update()
+        draw_death_particles()
+        if current_level == 0:
+            tutorial_text()
+        if levels[current_level].reach_end(player):
+            print("finished level")
+            start_portal_animation = True 
+            # current_level += 1
+            # player.position = levels[current_level].player_start.copy()
+            # player.velocity = [0, 0]
+            # world_offset = [0, 0]
+        if start_portal_animation:
+            player.portal_animation()
+            screen.blit(player.image, player.rect)
         pygame.display.flip()
 
         pygame.time.Clock().tick(60)
