@@ -1,37 +1,61 @@
 import pygame
-import math
+import sys
+import random
 
-# Pygame setup
+# Initialize Pygame
 pygame.init()
-screen = pygame.display.set_mode((250, 250))
-running = True
 
-angle = 0
-speed = 0.05
-num_arms = 5
-radius = 100
+# Set up some constants
+WIDTH, HEIGHT = 800, 600
+FPS = 60
 
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-    pygame.draw.circle(screen, (255, 0, 255), (125, 125), 105)
-    # Draw the spiral
-    for i in range(num_arms):
-        angle_offset = 2 * math.pi / num_arms * i + angle
-        for j in range(200):
-            r = j / 200 * radius
-            theta = j / 200 * 2 * math.pi + angle_offset
-            x = int(r * math.cos(theta)) + 125
-            y = int(r * math.sin(theta)) + 125
-            pygame.draw.circle(screen, (128, 0, 128), (x, y), 5)
-    pygame.draw.circle(screen, (0, 0, 0), (125, 125), 105, width=10)
-    # Update the display
-    pygame.display.flip()
+# Set up the display
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
-    # Increase the angle
-    angle += speed
-    pygame.time.delay(16)
+# Set up the clock
+clock = pygame.time.Clock()
 
-# Quit Pygame
-pygame.quit()
+# Set up the rectangle
+rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 200, 100)
+
+# Create a list of smaller rectangles within the main rectangle
+rects = [{"rect": pygame.Rect(rect.x + i*10, rect.y + j*10, 10, 10), "falling": False} for i in range(rect.width//10) for j in range(rect.height//10)]
+
+def draw_rects():
+    global rects
+    if rects:
+        # Randomly select a rectangle and set its "falling" value to True
+        for _ in range(5):
+            rects[random.randint(0, len(rects) - 1)]["falling"] = True
+
+        # Update the y-coordinate of all rectangles that are falling
+        for r in rects:
+            if r["falling"]:
+                r["rect"].y += 10  # Adjust this value to change the speed of falling
+
+                # If the rectangle has fallen off the screen, remove it from the list
+                if r["rect"].y > HEIGHT:
+                    rects.remove(r)
+
+    if len(rects) < 50:
+        for rect in rects:
+            rect["falling"] = True
+
+    for r in rects:
+        pygame.draw.rect(screen, (57, 57, 57), r["rect"])
+
+def main():
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+        screen.fill((0, 0, 0))
+        draw_rects()
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+if __name__ == "__main__":
+    main()

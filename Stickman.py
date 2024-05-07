@@ -14,7 +14,6 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Labrynth")
 
 world_offset = [0, 0]
-world_size = [3200, 500]
 # Interpolates between two points this is for the respawn animation
 def interpolate(t, point1, point2):
     x = point1[0] + t * (point2[0] - point1[0])
@@ -128,10 +127,10 @@ class Player(pygame.sprite.Sprite):
         if self.position[0] < self.size[0]/2:
             self.position[0] = self.size[0]/2
         
-        if self.position[0] > world_size[0] - self.size[0]/2:
-            self.position[0] = world_size[0] - self.size[0]/2
+        if self.position[0] > levels[current_level].world_size[0] - self.size[0]/2:
+            self.position[0] = levels[current_level].world_size[0] - self.size[0]/2
         
-        if self.position[1] > world_size[1] - self.size[1]/2:
+        if self.position[1] > levels[current_level].world_size[1] - self.size[1]/2:
             self.respawn = True
             self.death_location = self.position.copy()
             self.death_time = 0
@@ -145,6 +144,12 @@ class Player(pygame.sprite.Sprite):
             self.rect.centery = self.position[1] - world_offset[1]
         else:
             self.rect.centery = self.position[1]
+
+        if self.position[0] - world_offset[0] < -self.size[0] and current_level == 2:
+            self.respawn = True 
+            self.death_location = self.position.copy()
+            self.death_time = 0
+            self.position[1] = 10000000
     def doRespawn(self):
         new_point = interpolate(self.death_time, self.death_location, levels[current_level].player_start.copy())
         world_offset[0] = new_point[0] - WIDTH/2
@@ -154,8 +159,12 @@ class Player(pygame.sprite.Sprite):
             world_offset[0] = 0
             self.respawn = False
             self.position = levels[current_level].player_start.copy()
+            for platform in levels[current_level].platforms:
+                if platform.type == "falling":
+                    platform.collideable = True
+                    platform.rects = [{"rect": pygame.Rect(platform.position[0] + i, platform.position[1] + j, 5, 5), "falling": False} for i in range(0, platform.size[0], 5) for j in range(0, platform.size[1], 5)]
     def portal_animation(self):
-        global start_portal_animation
+        global start_portal_animation, current_level, world_offset
         if self.scale > 0:
             self.scale -= self.shrink_speed
             self.angle += self.rotation_speed
@@ -167,8 +176,8 @@ class Player(pygame.sprite.Sprite):
             self.rect.center = self.position[0] - world_offset[0], self.position[1] - world_offset[1]
             self.image = pygame.transform.rotozoom(self.frames_l[self.current_frame], self.angle, self.scale)
             self.rect = self.image.get_rect(center=self.rect.center)
-            self.rect = self.image.get_rect(center=self.rect.center)
         else:
+            current_level += 1
             self.position = levels[current_level].player_start.copy()
             self.scale = 1
             self.angle = 180
@@ -177,23 +186,41 @@ class Player(pygame.sprite.Sprite):
             self.jumping = False
             self.velocity = [0, 0]
             self.image = self.frames_l[0]
-            self.rect = self.image.get_rect(center=(WIDTH / 2, HEIGHT-100))
+            self.rect = self.image.get_rect(center=(levels[current_level].player_start[0], levels[current_level].player_start[1]))
             self.size = self.image.get_size()
-            self.world_offset = [0, 0]
+            world_offset = [0, 0]
             start_portal_animation = False
 
         
 
 class Platform(pygame.sprite.Sprite):
-    def __init__(self, x, y, w, h, color):
+    def __init__(self, x, y, w, h, color, image=None, type="platform"):
         super().__init__()
         self.image = pygame.Surface((w, h))
-        self.image.fill(color)
+        if image:
+            self.image = pygame.transform.scale(pygame.image.load(image), (w, h))
+        else:
+            self.image.fill(color)
         self.rect = self.image.get_rect(topleft=(x, y))
         self.size = [w, h]
         self.position = [x, y]
+        self.type = type
+        self.color = color
+        self.collideable = True
+        if self.type == "falling":
+            self.rects = [{"rect": pygame.Rect(x + i, y + j, 5, 5), "falling": False} for i in range(0, w, 5) for j in range(0, h, 5)]
     def collide(self, player:Player):
+        if type == "visual" or self.collideable == False:
+            return
         if self.rect.colliderect(player.rect):
+            if self.type == "spike":
+                player.respawn = True
+                player.death_location = player.position.copy()
+                player.death_time = 0
+                player.position[1] = 10000000
+            if self.type == "falling" and self.collideable:
+                for _ in range(5):
+                    self.rects[random.randint(0, len(self.rects) - 1)]["falling"] = True
             overlapX = min(
                 (player.position[0] + player.size[0]/2) - self.position[0], 
                 (self.position[0] + self.size[0]) - (player.position[0] - player.size[0]/2))
@@ -222,7 +249,24 @@ class Platform(pygame.sprite.Sprite):
             
     def update(self):
         global world_offset
-        self.rect.topleft = (self.position[0] - world_offset[0], self.position[1] - world_offset[1])
+        if self.type == "falling":
+            self.rect.topleft = (self.position[0] - world_offset[0], self.position[1] - world_offset[1])
+            for r in self.rects:
+                if r["falling"]:
+                    r["rect"].y += 10
+                if r["rect"].y > HEIGHT:
+                    self.rects.remove(r)
+            if len(self.rects) < 20:
+                self.collideable = False
+                for rect in self.rects:
+                    rect["falling"] = True
+            for r in self.rects:
+                surface = pygame.Surface((5, 5))
+                surface.fill(self.color)
+                screen.blit(surface, pygame.Rect(r["rect"].x - world_offset[0], r["rect"].y, r["rect"].w, r["rect"].h))
+        else:
+            self.rect.topleft = (self.position[0] - world_offset[0], self.position[1] - world_offset[1])
+
 class LevelData:
     def __init__(self, level, platforms = [], player_start = [], end_point = []):
         self.level = level
@@ -234,10 +278,12 @@ class LevelData:
         self.portal_angle = 0
         self.portal_speed = 0.05
         self.background_color = (173, 216, 230)
+        self.world_size = [3200, 500]
     def update(self):
         for platform in self.platforms:
             platform.update()
-            screen.blit(platform.image, platform.rect)
+            if not platform.type == "falling":
+                screen.blit(platform.image, platform.rect)
         pygame.draw.circle(screen, (255, 0, 255), (self.end_point[0] - world_offset[0], self.end_point[1] - world_offset[1]), 52)
         # Draw the portal
         for i in range(5):
@@ -268,18 +314,76 @@ class Level1(LevelData):
         self.ball_pit_2 = BallSimulation(1090, 0, width=1290, start_height=420, height=HEIGHT-40, screen=screen)
         self.ball_pit.initialize()
         self.ball_pit_2.initialize()
+        self.world_size = [3200, 500]
     def update(self):
         super().update()
         self.ball_pit.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
         self.ball_pit.run(world_offset)
         self.ball_pit_2.update_player_ball(player.position[0], player.position[1], player.velocity[0], player.velocity[1])
         self.ball_pit_2.run(world_offset)
+
+class Level2(LevelData):
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
+        super().__init__(level, platforms, player_start, end_point)
+        self.platforms.add(Platform(800, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+        self.platforms.add(Platform(500, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+        for x in range(16):
+            self.platforms.add(Platform(2325+x*60, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+        # Stagitites above the player    
+        self.platforms.add(Platform(430, 0, 20, 30, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(450, 0, 10, 20, (100, 100, 100), type="visual"))
+
+        self.platforms.add(Platform(1000, 0, 10, 20, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(1010, 0, 15, 50, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(1025, 0, 20, 30, (100, 100, 100), type="visual"))
+
+        self.platforms.add(Platform(1770, 0, 20, 25, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(1790, 0, 10, 20, (100, 100, 100), type="visual"))
+
+        self.platforms.add(Platform(2300, 0, 10, 20, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(2310, 0, 20, 100, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(2330, 0, 10, 80, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(2340, 0, 25, 70, (100, 100, 100), type="visual"))
+
+        self.platforms.add(Platform(3020, 0, 10, 70, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3030, 0, 8, 100, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3038, 0, 10, 90, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3048, 0, 10, 50, (100, 100, 100), type="visual"))
+
+        self.platforms.add(Platform(3500, 0, 5, 50, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3505, 0, 15, 60, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3520, 0, 10, 70, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3530, 0, 5, 60, (100, 100, 100), type="visual"))
+        self.platforms.add(Platform(3535, 0, 20, 50, (100, 100, 100), type="visual"))
+        # Lava rects    
+        self.platforms.add(Platform(990, 460, 730, 40, (255, 0, 0), type="spike"))
+        self.platforms.add(Platform(1090, 460, 200, 10, (255, 127, 39), type="visual"))
+        self.platforms.add(Platform(1040, 468, 100, 15, (255, 127, 39), type="visual"))
+        self.platforms.add(Platform(1100, 463, 40, 7, (255, 255, 0), type="visual"))
+        self.platforms.add(Platform(1400, 465, 150, 20, (255, 127, 39), type="visual"))
+        self.platforms.add(Platform(1500, 480, 120, 15, (255, 127, 39), type="visual"))
+        self.platforms.add(Platform(1480, 467, 40, 15, (255, 255, 0), type="visual"))
+        self.platforms.add(Platform(1500, 482, 35, 10, (255, 255, 0), type="visual"))
+        self.background_color = (127, 127, 127)
+        self.world_size = [4000, 500]
+
+class Level3(LevelData):
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
+        super().__init__(level, platforms, player_start, end_point)
+        self.background_color = (255, 174, 201)
+        self.world_size = [3700, 500]
     
+class Level4(LevelData):
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
+        super().__init__(level, platforms, player_start, end_point)
+        self.background_color = (255, 255, 255)
+        self.world_size = [3700, 500]
+        self.platforms.add(Platform(800, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
 levels = [
     Level1(
               1,
               [
-                (0, world_size[1]-40, world_size[0], 40, (0, 255, 0)), 
+                (0, 500-40, 3200, 40, (0, 255, 0)), 
                 (500, 415, 80, 20, (255, 255, 255)), 
                 (720, 350, 50, 110, (255, 255, 255)), 
                 (770, 380, 75, 25, (255, 255, 255)),
@@ -292,9 +396,107 @@ levels = [
               ],
               [100, 445],
               [3000, 400]
-            )
+            ),
+    Level2(
+              2,
+              [
+                (0, 500-40, 990, 40, (100, 100, 100)),
+                (1720, 500-40, 2280, 40, (100, 100, 100)),
+                (400, 500-80, 60, 40, (75, 75, 75)),
+                (600, 340, 140, 30, (75, 75, 75)),
+                (890, 255, 100, 30, (75, 75, 75)),
+                (920, 285, 70, 25, (75, 75, 75)),
+                (950, 310, 40, 35, (75, 75, 75)),
+                (965, 345, 25, 80, (75, 75, 75)),
+                (900, 425, 90, 20, (75, 75, 75)),
+                (890, 445, 100, 15, (75, 75, 75)),
+                (1200, 220, 50, 20, (75, 75, 75)),
+                (1400, 250, 75, 15, (75, 75, 75)),
+                (1720, 345, 110, 115, (75, 75, 75)),
+                (1730, 280, 75, 65, (75, 75, 75)),
+                (1730, 260, 30, 30, (75, 75, 75)),
+                (1830, 390, 30, 70, (75, 75, 75)),
+
+                (2300, 390, 25, 70, (75, 75, 75)),
+                (2450, 320, 80, 30, (75, 75, 75)),
+                (2650, 320, 100, 30, (75, 75, 75)),
+                (3000, 250, 80, 20, (75, 75, 75)),
+                (3300, 220, 50, 240, (75, 75, 75)),
+              ],
+              [100, 445],
+              [3800, 400]
+                
+    ),
+    Level3(
+              3,
+              [
+                (0, 500-40, 3700, 40, (163, 73, 164)),
+                (400, 350, 400, 110, (163, 73, 164)),
+                (470, 290, 280, 60, (163, 73, 164)),
+                (750, 330, 40, 20, (163, 73, 164)),
+                (500, 230, 110, 60, (163, 73, 164)),
+                (610, 270, 140, 20, (163, 73, 164)),
+                (950, 230, 55, 230, (163, 73, 164)),
+                (1005, 350, 50, 110, (163, 73, 164)),
+                (1250, 230, 55, 230, (163, 73, 164)),
+                (1305, 350, 50, 110, (163, 73, 164)),
+                (1550, 230, 55, 230, (163, 73, 164)),
+                (1605, 350, 50, 110, (163, 73, 164)),
+                (1900, 200, 145, 25, (163, 73, 164)),
+                (2150, 260, 145, 200, (163, 73, 164)),
+                (2295, 360, 15, 100, (163, 73, 164)),
+                (2260, 220, 35, 40, (163, 73, 164)),
+                (2200, 25, 45, 70, (163, 73, 164)),
+                (2220, 0, 250, 50, (163, 73, 164)),
+
+                (2380, 50, 70, 20, (163, 73, 164)),
+                (2380, 70, 70, 20, (163, 73, 164)),
+                (2400, 70, 50, 100, (163, 73, 164)),
+                (2420, 160, 55, 185, (163, 73, 164)),
+                (2535, 445, 25, 15, (163, 73, 164)),
+
+                (2470, 0, 430, 25, (163, 73, 164)),
+                (2760, 5, 190, 30, (163, 73, 164)),
+                (2810, 30, 45, 30, (163, 73, 164)),
+                (2855, 30, 115, 210, (163, 73, 164)),
+
+                (2970, 90, 35, 50, (163, 73, 164)),
+                (2970, 140, 65, 100, (163, 73, 164)),
+                (2915, 240, 75, 85, (163, 73, 164)),
+
+                (2560, 360, 180, 100, (163, 73, 164)),
+                (2730, 345, 50, 115, (163, 73, 164)),
+                (2580, 255, 155, 105, (163, 73, 164)),
+                (2590, 205, 130, 50, (163, 73, 164)),
+                (2600, 155, 100, 80, (163, 73, 164)),
+                (2600, 135, 40, 20, (163, 73, 164)),
+              ],
+              [100, 445],
+              [3500, 400]
+    ),
+
+    Level4(
+              4,
+              [
+                (0, 500-40, 3700, 40, (153, 217, 234)),
+                (500, 350, 125, 150, (0, 162, 232)),
+                (780, 220, 110, 25, (127, 127, 127), None, "falling"),
+                (1080, 200, 50, 25, (127, 127, 127), None, "falling"),
+                (1295, 50, 125, 450, (0, 162, 232)),
+                (1200, -50, 300, 50, (255, 255, 255)),
+                (1920, 320, 40, 25, (127, 127, 127), None, "falling"),
+                (2180, 320, 40, 25, (127, 127, 127), None, "falling"),
+                (2420, 290, 40, 25, (127, 127, 127), None, "falling"),
+                (2740, 240, 40, 25, (0, 162, 232)),
+                (3000, 180, 700, 320, (0, 162, 232)),
+              ],
+              [100, 445],
+              [3500, 120]
+    )
+
+    
 ]
-current_level = 0
+current_level = 3
 player = Player()
 particles = []
 jumpDebounce = True
@@ -309,25 +511,31 @@ def handle_input():
         player.jump()
         jumpDebounce = False
     if not keys[pygame.K_UP]:
-        jumpDebounce = True
-    if not any(keys):
+        jumpDebounce =  True
+    if not any(keys): 
         player.moving = False
 
 def update_world_offset(old_x_position):
-    world_offset[0] += player.position[0] - old_x_position
-    world_offset[1] += player.velocity[1]
+    if current_level == 2:
+        world_offset[0] += 5.5
+        if world_offset[0] < 0 or player.position[0] < WIDTH/2:
+            world_offset[0] = 0
+        if world_offset[0] > levels[current_level].world_size[0] - WIDTH or player.position[0] > levels[current_level].world_size[0] - WIDTH/2:
+            world_offset[0] = levels[current_level].world_size[0] - WIDTH
+    else:
+        world_offset[0] += player.position[0] - old_x_position
+        world_offset[1] += player.velocity[1]
 
-    if world_offset[0] < 0 or player.position[0] < WIDTH/2:
-        world_offset[0] = 0
-    if world_offset[1] < 0 or player.position[1] < HEIGHT/2:
-        world_offset[1] = 0
-    
-    if world_offset[0] > world_size[0] - WIDTH or player.position[0] > world_size[0] - WIDTH/2:
-        world_offset[0] = world_size[0] - WIDTH
+        if world_offset[0] < 0 or player.position[0] < WIDTH/2:
+            world_offset[0] = 0
+        if world_offset[1] < 0 or player.position[1] < HEIGHT/2:
+            world_offset[1] = 0
+        
+        if world_offset[0] > levels[current_level].world_size[0] - WIDTH or player.position[0] > levels[current_level].world_size[0] - WIDTH/2:
+            world_offset[0] = levels[current_level].world_size[0] - WIDTH
 
-    if world_offset[1] > world_size[1] - HEIGHT or player.position[1] > world_size[1] - HEIGHT/2:
-        world_offset[1] = world_size[1] - HEIGHT
-       
+        if world_offset[1] > levels[current_level].world_size[1] - HEIGHT or player.position[1] > levels[current_level].world_size[1] - HEIGHT/2:
+            world_offset[1] = levels[current_level].world_size[1] - HEIGHT
 start_screen = VideoFileClip('./stickman/Start Screen.mp4')
 def play_start_screen():
     while True:
@@ -373,7 +581,7 @@ def draw_death_particles():
             particles.remove(particle)
 start_portal_animation = False
 def main():
-    global angle, speed, start_portal_animation
+    global start_portal_animation
     play_start_screen()
     while True:
         for event in pygame.event.get():
@@ -389,19 +597,14 @@ def main():
             levels[current_level].collide(player)
             update_world_offset(old_x_position)
 
-        screen.fill(levels[0].background_color)
+        screen.fill(levels[current_level].background_color)
         screen.blit(player.image, player.rect)
         levels[current_level].update()
         draw_death_particles()
         if current_level == 0:
             tutorial_text()
         if levels[current_level].reach_end(player):
-            print("finished level")
-            start_portal_animation = True 
-            # current_level += 1
-            # player.position = levels[current_level].player_start.copy()
-            # player.velocity = [0, 0]
-            # world_offset = [0, 0]
+            start_portal_animation = True
         if start_portal_animation:
             player.portal_animation()
             screen.blit(player.image, player.rect)
