@@ -191,7 +191,33 @@ class Player(pygame.sprite.Sprite):
             world_offset = [0, 0]
             start_portal_animation = False
 
-        
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self, position, velocity, size):
+        super().__init__()
+        self.image = pygame.Surface(size)
+        self.image.fill((255, 157, 0))
+        self.rect = self.image.get_rect(center=position)
+        self.position = [position[0], position[1]]
+        self.velocity = velocity
+        self.dead = False
+    def update(self):
+        self.position[0] += self.velocity[0]
+        self.position[1] += self.velocity[1]
+        self.rect.centerx = self.position[0] - world_offset[0]
+        self.rect.centery = self.position[1] - world_offset[1]
+        if self.position[0] < 0:
+            self.dead = True
+        if self.position[1] > levels[current_level].world_size[1]:
+            self.dead = True
+    def collide(self, player:Player):
+        if self.rect.colliderect(player.rect):
+            player.respawn = True
+            player.death_location = player.position.copy()
+            player.death_time = 0
+            player.position[1] = 10000000
+            player.rect.centery = 10000000
+            return True
+        return False
 
 class Platform(pygame.sprite.Sprite):
     def __init__(self, x, y, w, h, color, image=None, type="platform"):
@@ -378,7 +404,55 @@ class Level4(LevelData):
         super().__init__(level, platforms, player_start, end_point)
         self.background_color = (255, 255, 255)
         self.world_size = [3700, 500]
-        self.platforms.add(Platform(800, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+        for x in range(11):
+            self.platforms.add(Platform(630+x*60, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+        for x in range(26):
+            self.platforms.add(Platform(1440+x*60, 425, 60, 40, (75, 75, 75), "./stickman/stalactite.png", type="spike"))
+class Level5(LevelData):
+    def __init__(self, level, platforms = [], player_start = [], end_point = []):
+        super().__init__(level, platforms, player_start, end_point)
+        self.background_color = (3, 11, 207)
+        self.world_size = [2500, 500]
+        self.bullets = pygame.sprite.Group()
+        self.counter = 0
+        self.last_spawn_time = time.time()
+        self.finished = False
+    def update(self):
+        global player
+        super().update()
+        if not player.respawn:
+            start_len = len(self.bullets)
+            for i in range(len(self.bullets)):
+                bullet = self.bullets.sprites()[start_len - i - 1]
+                bullet.update()
+                if bullet.dead:
+                    self.bullets.remove(bullet)
+                screen.blit(bullet.image, bullet.rect)    
+        if time.time() - self.last_spawn_time >= 1 and self.counter < 20:
+            self.counter += 1
+            self.bullets.add(Bullet((3000, random.randrange(300, 450)), (-5, 0), (20, 5)))
+            for _ in range(10):
+                self.bullets.add(Bullet((random.randrange(0, 2500), -300), (0, 5), (5, 20)))
+            # spawn a bullet that will go do player
+            angle_to_player_1 = math.atan2(player.position[1], player.position[0] - 1000)
+            angle_to_player_2 = math.atan2(player.position[1], player.position[0] - 2200)
+            self.bullets.add(Bullet((1000, 0), (5*math.cos(angle_to_player_1), 5*math.sin(angle_to_player_1)), (10, 10)))
+            self.bullets.add(Bullet((2200, 0), (5*math.cos(angle_to_player_2), 5*math.sin(angle_to_player_2)), (10, 10)))
+            self.last_spawn_time = time.time()
+        if self.counter == 20:
+            self.finished = True
+        if self.finished:
+            self.platforms.sprites()[-1].collideable = False
+            self.platforms.sprites()[-1].image.fill(self.background_color)
+    def collide(self, player):
+        super().collide(player)
+        for bullet in self.bullets:
+            if bullet.collide(player):
+                self.counter = 0
+                self.bullets = pygame.sprite.Group()
+                self.last_spawn_time = time.time()
+                self.finished = False
+        
 levels = [
     Level1(
               1,
@@ -492,11 +566,23 @@ levels = [
               ],
               [100, 445],
               [3500, 120]
+    ),
+    Level5(
+              5,
+              [
+                (0, 500-40, 1000, 40, (35, 160, 72)),
+                (1000, 500-40, 1200, 20, (185, 122, 87)),
+                (1005, 500-35, 1190, 10, (128, 64, 0)),
+                (2200, 500-40, 300, 40, (157, 157, 157)),
+                (2200, 0, 300, 300, (157, 157, 157)),
+                (2400, 300, 100, 160, (128, 64, 0)),
+              ],
+              [100, 445],
+              [3500, 120]
     )
-
     
 ]
-current_level = 3
+current_level = 4
 player = Player()
 particles = []
 jumpDebounce = True
@@ -567,7 +653,7 @@ def tutorial_text():
     elif player.position[0] < 500:
         draw_text(screen, "Press UP arrow to jump", 300, 250)
     elif 1090 < player.position[0] < 1350:
-        draw_text(screen, "Hold LEFT to maintain momentum", 100, 200) 
+        draw_text(screen, "Hold LEFT on platforms maintain momentum", 100, 200) 
     elif 1950 < player.position[0] < 2380:
         draw_text(screen, "Jump in the air to travel further", 100, 100)
     elif player.position[0] > 2800:
